@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SYN Flood Detection Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.min.js"></script>
+  <style>
+    :root {
+      --primary: #00ffc6;
+      --accent: #007bff;
+      --bg-dark: #1e1e2f;
+      --bg-panel: #292a3a;
+      --text-light: #f4f4f4;
+      --danger: #ff4d4d;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: var(--bg-dark);
+      margin: 0;
+      color: var(--text-light);
+    }
+
+    header {
+      background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+      padding: 20px 40px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+
+    header h2 {
+      margin: 0;
+      font-size: 2rem;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #tabs {
+      display: flex;
+      background: var(--bg-panel);
+      padding: 10px 40px;
+      border-bottom: 2px solid #333;
+    }
+
+    #tabs button {
+      background: transparent;
+      border: none;
+      color: #aaa;
+      padding: 10px 20px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid transparent;
+    }
+
+    #tabs button:hover, #tabs button.active {
+      color: var(--primary);
+      border-bottom: 3px solid var(--primary);
+    }
+
+    .tab-content {
+      display: none;
+      padding: 30px 40px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    canvas {
+      width: 100%;
+      background: #1c1c2c;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 15px rgba(0,0,0,0.2);
+    }
+
+    #popup {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: var(--danger);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 10px;
+      display: none;
+      z-index: 999;
+      font-weight: bold;
+      animation: fadeInOut 3s ease-in-out;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(-20px); }
+      10% { opacity: 1; transform: translateY(0); }
+      90% { opacity: 1; }
+      100% { opacity: 0; transform: translateY(-20px); }
+    }
+
+    #log, #bannedList {
+      max-height: 300px;
+      overflow-y: auto;
+      background: var(--bg-panel);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      list-style: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    }
+
+    #log li, #bannedList li {
+      padding: 8px 0;
+      border-bottom: 1px solid #333;
+      font-size: 0.95rem;
+    }
+
+    .banned {
+      color: var(--danger);
+      font-weight: bold;
+    }
+
+    h3 {
+      margin-top: 30px;
+      color: var(--primary);
+      font-size: 1.4rem;
+    }
+
+    @media (max-width: 768px) {
+      header, #tabs, .tab-content {
+        padding: 20px;
+      }
+
+      canvas {
+        padding: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h2>🛡️ Real-Time SYN Flood Dashboard</h2>
+  </header>
+
+  <div id="tabs">
+    <button class="active" onclick="showTab('barTab', this)">📊 Bar Chart</button>
+    <button onclick="showTab('bannedTab', this)">🔒 Blocked IPs</button>
+  </div>
+
+  <div id="barTab" class="tab-content active">
+    <canvas id="synBarChart" height="300"></canvas>
+    <h3>📋 Live Log</h3>
+    <ul id="log"></ul>
+  </div>
+
+  <div id="bannedTab" class="tab-content">
+    <h3>🛑 Blocked IP Addresses</h3>
+    <ul id="bannedList"></ul>
+  </div>
+
+  <div id="popup"></div>
+
+  <script>
+    const socket = io();
+    const ipCounts = {};
+    const bannedIPs = new Set();
+
+    const barCtx = document.getElementById('synBarChart').getContext('2d');
+
+    const barChart = new Chart(barCtx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'SYN Count per IP',
+          data: [],
+          backgroundColor: 'rgba(0,255,198,0.5)',
+          borderColor: '#00ffc6',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#ccc' },
+            grid: { color: '#333' }
+          },
+          x: {
+            ticks: { color: '#ccc' },
+            grid: { color: '#333' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: '#eee'
+            }
+          }
+        }
+      }
+    });
+
+    function showTab(id, btn) {
+      document.querySelectorAll('.tab-content').forEach(div => div.classList.remove('active'));
+      document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function showPopup(message) {
+      const popup = document.getElementById('popup');
+      popup.textContent = message;
+      popup.style.display = 'block';
+      setTimeout(() => { popup.style.display = 'none'; }, 3000);
+    }
+
+    function updateBarChart(ip) {
+      if (!ipCounts[ip]) {
+        ipCounts[ip] = 0;
+        barChart.data.labels.push(ip);
+        barChart.data.datasets[0].data.push(0);
+      }
+      const index = barChart.data.labels.indexOf(ip);
+      ipCounts[ip]++;
+      barChart.data.datasets[0].data[index] = ipCounts[ip];
+      barChart.update();
+    }
+
+    socket.on('update', data => {
+      const { ip, timestamp, syn_count, banned } = data;
+
+      if (banned) {
+        if (!bannedIPs.has(ip)) {
+          bannedIPs.add(ip);
+          const li = document.createElement('li');
+          li.textContent = `${ip} (Banned at ${timestamp})`;
+          li.classList.add("banned");
+          document.getElementById('bannedList').appendChild(li);
+          showPopup(`🚫 IP BANNED: ${ip}`);
+        }
+        return;
+      }
+
+      updateBarChart(ip);
+
+      const log = document.getElementById('log');
+      const li = document.createElement('li');
+      li.textContent = `${timestamp} - ${ip} - SYN Count: ${syn_count}`;
+      log.prepend(li);
+    });
+  </script>
+</body>
+</html>
