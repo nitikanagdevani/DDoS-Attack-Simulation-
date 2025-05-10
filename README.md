@@ -1,8 +1,8 @@
-## Simulating a DDoS Attack #
+# Simulating a DDoS Attack #
 
 This project demonstrates the simulation and real-time mitigation of a SYN flood DDoS attack using GNS3 and VirtualBox. It involves setting up a virtual environment with a Command & Control (C2) server, bot machine, and a victim server.
 
-# Key Features:
+## Key Features:
 
 1. Attack Simulation: Python-based C2 server triggers bots to launch SYN flood attacks on the victim.
 
@@ -13,7 +13,7 @@ This project demonstrates the simulation and real-time mitigation of a SYN flood
 4. Live Dashboard: Flask + WebSocket-based dashboard displays SYN activity and blocked IPs in real time.
 
 
-# Tools & Technologies:
+## Tools & Technologies:
 
 1. Kali Linux, Ubuntu Server
 
